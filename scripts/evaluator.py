@@ -7,6 +7,168 @@ import json
 from datetime import datetime
 from tqdm import tqdm
 
+class PopularityRecommender:
+    """
+    Popularity-based baseline recommender
+    Recommends most frequently mentioned movies in training data
+    """
+    
+    def __init__(self, data_processor):
+        """
+        Args:
+            data_processor: INSPIREDDataProcessor instance
+        """
+        self.data_processor = data_processor
+        self.popularity_scores = {}
+        
+    def fit(self, split="train"):
+        """
+        Calculate movie popularity from training data
+        
+        Args:
+            split: Dataset split to calculate popularity from
+        """
+        print(f"\nCalculating movie popularity from {split} data...")
+        dialogs = self.data_processor.load_dialogs(split=split, max_dialogs=None)
+        
+        # Count movie occurrences
+        movie_counts = defaultdict(int)
+        for dialog in dialogs:
+            for movie_id in dialog['recommended_movies']:
+                movie_counts[movie_id] += 1
+        
+        # Store as sorted list (most popular first)
+        self.popularity_scores = sorted(
+            movie_counts.items(), 
+            key=lambda x: x[1], 
+            reverse=True
+        )
+        
+        print(f"Calculated popularity for {len(self.popularity_scores)} movies")
+        print(f"Most popular movie ID: {self.popularity_scores[0][0]} (count: {self.popularity_scores[0][1]})")
+        
+    def predict_top_k(self, conversation_text, movie_id_to_name, k=10):
+        """
+        Predict top-k most popular movies
+        
+        Args:
+            conversation_text: Not used (popularity is global)
+            movie_id_to_name: Dictionary mapping movie IDs to names
+            k: Number of recommendations
+        
+        Returns:
+            List of recommendation dictionaries
+        """
+        recommendations = []
+        
+        for movie_id, count in self.popularity_scores[:k]:
+            if movie_id in movie_id_to_name:
+                recommendations.append({
+                    'movie_id': movie_id,
+                    'movie_name': movie_id_to_name[movie_id],
+                    'score': count
+                })
+        
+        return recommendations
+
+
+class BaselineEvaluationPipeline:
+    """
+    Complete evaluation pipeline for Baseline (LLM + RAG with Popularity recommender)
+    """
+    
+    def __init__(self, recommender, data_processor, k_values=[1, 3, 5, 10]):
+        """
+        Args:
+            recommender: PopularityRecommender instance
+            data_processor: INSPIREDDataProcessor instance
+            k_values: List of k values for evaluation
+        """
+        self.recommender = recommender
+        self.data_processor = data_processor
+        self.evaluator = RecommenderEvaluator(k_values=k_values)
+        self.predictions = []
+        
+    def run_evaluation(self, split="test", max_samples=None, top_k=10):
+        """
+        Run complete evaluation pipeline
+        
+        Args:
+            split: Which split to evaluate (test/dev)
+            max_samples: Maximum number of samples to evaluate
+            top_k: Number of recommendations to generate per query
+        
+        Returns:
+            Dictionary of evaluation metrics
+        """
+        print(f"\n{'='*60}")
+        print(f"RUNNING EVALUATION: Baseline (LLM + RAG + Popularity)")
+        print(f"{'='*60}\n")
+        
+        # Load test dialogs
+        print(f"Loading {split} dialogs...")
+        test_dialogs = self.data_processor.load_dialogs(
+            split=split, 
+            max_dialogs=max_samples
+        )
+        
+        print(f"Loaded {len(test_dialogs)} dialogs\n")
+        
+        # Generate predictions
+        self.predictions = self._generate_predictions(test_dialogs, top_k)
+        
+        # Evaluate
+        print("\nComputing metrics...")
+        results = self.evaluator.evaluate_batch(self.predictions)
+        
+        # Display results
+        self.evaluator.print_results(
+            dataset_name=split,
+            num_samples=len(test_dialogs)
+        )
+        
+        return results
+    
+    def _generate_predictions(self, dialogs, top_k):
+        """Generate predictions for all dialogs"""
+        predictions = []
+        
+        print("Generating predictions...")
+        for dialog in tqdm(dialogs, desc="Processing dialogs"):
+            conversation_text = dialog['conversation']
+            ground_truth_ids = set(dialog['recommended_movies'])
+            
+            # Get recommendations
+            recommendations = self.recommender.predict_top_k(
+                conversation_text,
+                self.data_processor.movie_name_map,
+                k=top_k
+            )
+            
+            # Extract movie IDs
+            recommended_ids = [rec['movie_id'] for rec in recommendations]
+            
+            predictions.append({
+                'recommended': recommended_ids,
+                'ground_truth': ground_truth_ids,
+                'dialog_id': dialog['dialog_id']
+            })
+        
+        return predictions
+    
+    def save_results(self, output_path, metadata=None):
+        """Save evaluation results"""
+        self.evaluator.save_results(
+            output_path=output_path,
+            model_name="Baseline (LLM+RAG+Popularity)",
+            metadata=metadata
+        )
+    
+    def get_results_table(self):
+        """Get results as DataFrame"""
+        return self.evaluator.get_summary_table()
+
+
 class RecommenderEvaluator:
     """
     Evaluator for recommendation metrics
