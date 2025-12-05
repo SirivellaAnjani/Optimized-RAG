@@ -15,15 +15,13 @@ Args:
     - dataset_dir: Directory containing the dataset
     - split: Which split to use (train, dev, test)
     - max_rows: Maximum number of rows to load (None for all rows)
-    - load_movie_db: Whether to load movie database (needed for external recommenders)
 
 Returns:
     - index: VectorStoreIndex for RAG
-    - movie_db: Movie database (if load_movie_db=True), else None
 '''
 import shutil
 
-def load_and_index_documents(dataset_dir="data", split="train", max_rows=None, load_movie_db=True, persist_dir="data/index", force_rebuild=False):
+def load_and_index_documents(dataset_dir="data", split="train", max_rows=None, persist_dir="data/index", force_rebuild=False):
     
     persist_path = Path(persist_dir) / split
     
@@ -42,12 +40,7 @@ def load_and_index_documents(dataset_dir="data", split="train", max_rows=None, l
             index = load_index_from_storage(storage_context)
             print("Index loaded successfully!")
             
-            # Load movie database if needed
-            movie_db = None
-            if load_movie_db:
-                movie_db = load_movie_database(dataset_dir)
-            
-            return index, movie_db
+            return index
         
         except Exception as e:
             print(f"Failed to load index: {e}")
@@ -68,10 +61,6 @@ def load_and_index_documents(dataset_dir="data", split="train", max_rows=None, l
     if not docs:
         raise ValueError("No documents loaded from INSPIRED dataset")
     
-    # Load movie database for reference (used by external recommenders)
-    movie_db = None
-    if load_movie_db:
-        movie_db = load_movie_database(dataset_dir)
     
     # Build vector index from documents
     print("Building vector index...")
@@ -86,4 +75,4 @@ def load_and_index_documents(dataset_dir="data", split="train", max_rows=None, l
     index.storage_context.persist(persist_dir=str(persist_path))
     print("Index saved!")
     
-    return index, movie_db
+    return index

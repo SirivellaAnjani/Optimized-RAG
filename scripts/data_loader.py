@@ -22,52 +22,51 @@ def load_inspired_dataset(data_path, max_rows=None):
     if not Path(data_path).exists():
         raise FileNotFoundError(f"INSPIRED dataset not found at '{data_path}'.")
     
+    df = pd.read_csv(data_path, sep='\t', nrows=max_rows)
+    
     documents = []
-    
-    # First pass: count total rows for progress bar
-    with open(data_path, 'r', encoding='utf-8') as f:
-        total_rows = sum(1 for _ in f) - 1
-    
-    if max_rows is not None:
-        total_rows = min(total_rows, max_rows)
-    
-    # 2nd pass: Load the TSV data
-    with open(data_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f, delimiter='\t')
+    skipped_empty = 0
+            
+    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Loading data"):
+        try:
+            dialog_id = str(row['dialog_id'])
+            turn_id = str(row['turn_id'])
+            utterance = str(row['text']).strip()
+            speaker = str(row['speaker'])
+            movie_name = str(row['movies']) if pd.notna(row['movies']) else ''
+        except KeyError as e:
+            print(f"Missing column: {e}")
+            continue
+            
+        # Skip empty utterances
+        if not utterance or utterance == 'nan':
+            skipped_empty += 1
+            continue
+            
+        # Create document text
+        if speaker == "RECOMMENDER":
+            doc_text = f"Recommendation: {utterance}\n"
+        else:
+            doc_text = f"User preference: {utterance}\n"
         
-        for idx, row in enumerate(tqdm(reader, total=total_rows, desc="Loading data")):
-            if max_rows is not None and idx >= max_rows:
-                break
-                
-            # Extract conversation information from TSV
-            dialog_id = row.get('dialog_id', '')
-            turn_id = row.get('turn_id', '')
-            utterance = row.get('utterance', '')
-            speaker = row.get('speaker', '')
-            movie_name = row.get('movie_name', '')
-            
-            # Create document text
-            if speaker == "RECOMMENDER":
-                doc_text = f"Recommendation: {utterance}\n"
-            else:
-                doc_text = f"User preference: {utterance}\n"
-            
-            if movie_name:
-                doc_text += f"Movie mentioned: {movie_name}\n"
-            
-            # Create metadata
-            metadata = {
-                "dialog_id": dialog_id,
-                "turn_id": turn_id,
-                "speaker": speaker,
-                "movie_name": movie_name if movie_name else "None"
-            }
-            
-            # Create Document object
-            doc = Document(text=doc_text, metadata=metadata)
-            documents.append(doc)
+        if movie_name and movie_name != 'nan' and movie_name != '':
+            doc_text += f"Movie mentioned: {movie_name}\n"
+        
+        # Create metadata
+        metadata = {
+            "dialog_id": dialog_id,
+            "turn_id": turn_id,
+            "speaker": speaker,
+            "movie_name": movie_name if (movie_name and movie_name != 'nan') else "None"
+        }
+        
+        # Create Document object
+        doc = Document(text=doc_text, metadata=metadata)
+        documents.append(doc)
     
     print(f"Loaded {len(documents)} turns from INSPIRED dataset")
+    if skipped_empty > 0:
+        print(f"Skipped {skipped_empty} empty utterances")
     return documents
 
 '''

@@ -1,19 +1,24 @@
 import torch
 import torch.nn as nn
 from transformers import AutoTokenizer, AutoModel
-import json
-from pathlib import Path
-import pandas as pd
-import re
-from .data_loader import INSPIREDDataProcessor
+
+
 '''
-Transformer-based movie recommender 
-trained on INSPIRED dataset
+Transformer-based recommender for LLM + RAG system
+Uses BERT encoder with trained recommender head
+Trained on INSPIRED dataset
 '''
 class TransformerRecommender(nn.Module):
 
-    def __init__(self, model_name="bert-base-uncased", num_movies=20):
+    '''
+    Args:
+        - model_name: HuggingFace model name for encoder
+        - num_movies: Number of movies in the dataset
+    '''
+    def __init__(self, num_movies, model_name="bert-base-uncased"):
+        
         super().__init__()
+        
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.encoder = AutoModel.from_pretrained(model_name)
         self.hidden_size = self.encoder.config.hidden_size
@@ -25,10 +30,21 @@ class TransformerRecommender(nn.Module):
             nn.Dropout(0.1),
             nn.Linear(512, num_movies)
         )
+
+    """   
+    Args:
+        - input_ids: Tokenized input (batch_size, seq_len)
+        - attention_mask: Attention mask (batch_size, seq_len)
         
+    Returns:
+        - logits: Movie scores (batch_size, num_movies)
+    """
     def forward(self, input_ids, attention_mask):
         # Get encoder outputs
-        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        outputs = self.encoder(
+            input_ids=input_ids, 
+            attention_mask=attention_mask
+        )
         
         # Use [CLS] token representation
         cls_output = outputs.last_hidden_state[:, 0, :]
@@ -37,8 +53,8 @@ class TransformerRecommender(nn.Module):
         logits = self.recommender_head(cls_output)
         return logits
     
-    def predict_top_k(self, conversation_text, movie_id_to_name, k=3):
-        """Predict top-k movie recommendations"""
+    def predict_top_k(self, conversation_text, movie_id_to_name, k=10):
+        
         # Tokenize
         inputs = self.tokenizer(
             conversation_text,
