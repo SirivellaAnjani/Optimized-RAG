@@ -47,7 +47,10 @@ def load_inspired_dataset(data_path, max_rows=None):
             movie_name = row.get('movie_name', '')
             
             # Create document text
-            doc_text = f"Speaker: {speaker}\nUtterance: {utterance}\n"
+            if speaker == "RECOMMENDER":
+                doc_text = f"Recommendation: {utterance}\n"
+            else:
+                doc_text = f"User preference: {utterance}\n"
             
             if movie_name:
                 doc_text += f"Movie mentioned: {movie_name}\n"
@@ -83,12 +86,11 @@ def load_movie_database(dataset_dir="data"):
         print(f"Movie database not found at {movie_db_path}")
         return {}
     
-    # Load with pandas (handles TSV better than csv)
     df = pd.read_csv(movie_db_path, sep='\t', encoding='utf-8')
     
     print(f"Loading {len(df)} movies from database...")
     
-    movie_name_col = 'title'  # Adjust if your column name is different
+    movie_name_col = 'title' 
     
     # Tracking filtering
     missing_titles = 0
@@ -97,7 +99,6 @@ def load_movie_database(dataset_dir="data"):
     
     movies = {}
     
-    # Create movie database using row index as movie_id
     for idx, row in df.iterrows():
         movie_name = str(row[movie_name_col])
         
@@ -110,7 +111,6 @@ def load_movie_database(dataset_dir="data"):
             nan_titles += 1
             continue
         
-        # Valid movie - store entire row as dict
         movies[idx] = row.to_dict()
         valid_movies += 1
     
@@ -155,7 +155,7 @@ class INSPIREDDataProcessor:
         # Load with pandas
         df = pd.read_csv(movie_db_path, sep='\t', encoding='utf-8')
         
-        print(f"Loading {len(df)} movies from database...")
+        print(f"In load_movie_database().\nLoading {len(df)} movies from database...")
         
         movie_name_col = 'title'
         
@@ -194,10 +194,7 @@ class INSPIREDDataProcessor:
         return self.movie_id_map, self.movie_name_map  
 
     def get_movie_id(self, movie_name):
-        """
-        Get movie ID for a given movie name
-        Tries exact match first, then match without year
-        """
+
         if pd.isna(movie_name) or movie_name == '':
             return None
         
@@ -214,11 +211,6 @@ class INSPIREDDataProcessor:
         
         return None
 
-        
-    '''
-    Load dialog data grouped by conversation
-    '''
-    '''
     def load_dialogs(self, split="train", max_dialogs=None):
         
         dialog_path = self.dataset_dir / "processed" / f"{split}.tsv"
@@ -228,48 +220,7 @@ class INSPIREDDataProcessor:
         
         df = pd.read_csv(dialog_path, sep='\t')
         
-        # Group by dialog_id
-        dialogs = []
-        for dialog_id, group in df.groupby('dialog_id'):
-            conversation = []
-            recommended_movies = []
-            
-            for _, row in group.iterrows():
-                speaker = row.get('speaker', '')
-                utterance = row.get('text', '')
-                movie_name = row.get('movies', '')
-                
-                conversation.append(f"{speaker}: {utterance}")
-                
-                # Track recommended movies
-                if movie_name and movie_name in self.movie_id_map:
-                    recommended_movies.append(self.movie_id_map[movie_name])
-            
-            if conversation and recommended_movies:
-                dialogs.append({
-                    'dialog_id': dialog_id,
-                    'conversation': ' '.join(conversation),
-                    'recommended_movies': list(set(recommended_movies))
-                })
-            
-            if max_dialogs and len(dialogs) >= max_dialogs:
-                break
-        
-        print(f"Loaded {len(dialogs)} dialogs")
-        return dialogs
-    '''
-    def load_dialogs(self, split="train", max_dialogs=None):
-        
-        dialog_path = self.dataset_dir / "processed" / f"{split}.tsv"
-        
-        if not dialog_path.exists():
-            raise FileNotFoundError(f"Dialog file not found at {dialog_path}")
-        
-        df = pd.read_csv(dialog_path, sep='\t')
-        
-        print(f"\n{'='*60}")
-        print(f"Loading dialogs from {split}.tsv")
-        print(f"{'='*60}")
+        print(f"Loading dialogs from {split}.tsv")        
         print(f"Total turns in file: {len(df)}")
         print(f"Unique dialogs: {df['dialog_id'].nunique()}")
         
@@ -301,7 +252,6 @@ class INSPIREDDataProcessor:
                 if movie_name and pd.notna(movie_name) and movie_name != '':
                     total_movie_mentions_processed += 1
                     
-                    # Use the new method that handles year matching
                     movie_id = self.get_movie_id(movie_name)
                     
                     if movie_id is not None:
@@ -327,16 +277,14 @@ class INSPIREDDataProcessor:
             if max_dialogs and len(dialogs) >= max_dialogs:
                 break
         
-        print(f"\n{'='*60}")
+        
         print(f"Loading Summary")
-        print(f"{'='*60}")
-        print(f"✓ Valid dialogs loaded: {len(dialogs)}")
-        print(f"✗ Dialogs skipped (no conversation): {dialogs_skipped_no_conv}")
-        print(f"✗ Dialogs skipped (no matching movies): {dialogs_skipped_no_movies}")
+        print(f"  Valid dialogs loaded: {len(dialogs)}")
+        print(f"  Dialogs skipped (no conversation): {dialogs_skipped_no_conv}")
+        print(f"  Dialogs skipped (no matching movies): {dialogs_skipped_no_movies}")
         print(f"  Total movie mentions processed: {total_movie_mentions_processed}")
         print(f"  Movies matched to database: {movies_matched}")
         print(f"  Movies NOT in database: {movies_not_in_db}")
         print(f"  Match rate: {movies_matched/total_movie_mentions_processed*100:.1f}%")
-        print(f"{'='*60}\n")
         
         return dialogs
